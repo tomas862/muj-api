@@ -1,4 +1,4 @@
-package main
+package database
 
 import (
 	"database/sql"
@@ -8,7 +8,8 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func connectDB() (*sql.DB, error) {
+// Connect establishes a connection to the database and returns it
+func Connect() (*sql.DB, error) {
 	// Build connection string from environment variables
 	connStr := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",

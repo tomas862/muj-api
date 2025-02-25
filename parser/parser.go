@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"muj/database"
+
 	"github.com/joho/godotenv"
 )
 
@@ -19,8 +21,8 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 
-	// Connect to database
-	db, err := connectDB()
+	// Connect to database using the database package
+	db, err := database.Connect()
 	if err != nil {
 		log.Fatal(err)
 	}
