@@ -6,7 +6,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
+
+	"muj/utils"
 
 	"github.com/joho/godotenv"
 
@@ -15,15 +16,10 @@ import (
 
 // Connect establishes a connection to the database and returns it
 func Connect() (*sql.DB, error) {
-	// Get the directory of the current file
-	_, filename, _, _ := runtime.Caller(0)
-	dir := filepath.Dir(filename)
-
 	// Load environment variables from the same directory as this file
-	if err := godotenv.Load(filepath.Join(dir, ".env")); err != nil {
+	if err := godotenv.Load(filepath.Join(utils.GetAbsolutePath(".env"))); err != nil {
 		log.Fatal("Error loading .env file")
 	}
-
 
 	// Build connection string from environment variables
 	connStr := fmt.Sprintf(
