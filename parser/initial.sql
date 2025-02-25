@@ -4,8 +4,8 @@ CREATE TABLE nomenclature_items (
     goods_code VARCHAR(20) NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE,
-    hier_pos SMALLINT NOT NULL, -- Changed to SMALLINT for small integers
-    indent SMALLINT NOT NULL,   -- Changed to SMALLINT for small integers
+    hier_pos SMALLINT NOT NULL CHECK (hier_pos IN (2, 4, 6, 8, 10))
+    indent SMALLINT NOT NULL CHECK (indent BETWEEN 0 AND 12)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     

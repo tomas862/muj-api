@@ -147,62 +147,68 @@ func countDashes(s string) int {
 
 // parseNomenclatureRow converts a row of Excel data into a structured NomenclatureEntry
 func parseNomenclatureRow(row []string) (NomenclatureEntry, error) {
-	entry := NomenclatureEntry{}
-	
-	// This is a basic implementation. You'll need to adapt this based on the exact
-	// structure of your Excel file and handle possible parsing errors properly.
-	if len(row) == 8 {
-		entry.GoodsCode = row[0]
-		
-		// Parse dates - handle empty dates
-		if row[1] != "" {
-			startDate, err := time.Parse("02-01-2006", row[1])
-			if err != nil {
-				return entry, fmt.Errorf("invalid start date format: %v", err)
-			}
-			entry.StartDate = startDate
-		}
-		
-		if row[2] != "" {
-			endDate, err := time.Parse("02-01-2006", row[2])
-			if err != nil {
-				return entry, fmt.Errorf("invalid end date format: %v", err)
-			}
-			entry.EndDate = &endDate
-		}
-		
-		entry.Language = row[3]
-		// Replace the current hierPos parsing code
-		hierPos, err := strconv.Atoi(row[4])
+    entry := NomenclatureEntry{}
+    
+    if len(row) == 8 {
+        entry.GoodsCode = row[0]
+        
+        // Parse dates - handle empty dates
+        if row[1] != "" {
+            startDate, err := time.Parse("02-01-2006", row[1])
+            if err != nil {
+                return entry, fmt.Errorf("invalid start date format: %v", err)
+            }
+            entry.StartDate = startDate
+        }
+        
+        if row[2] != "" {
+            endDate, err := time.Parse("02-01-2006", row[2])
+            if err != nil {
+                return entry, fmt.Errorf("invalid end date format: %v", err)
+            }
+            entry.EndDate = &endDate
+        }
+        
+        entry.Language = row[3]
+        
+        // Parse hier_pos
+        hierPos, err := strconv.Atoi(row[4])
+        if err != nil {
+            hierPosFloat, floatErr := strconv.ParseFloat(row[4], 64)
+            if floatErr != nil {
+                return entry, fmt.Errorf("invalid Hier. Pos. format: %v", err)
+            }
+            hierPos = int(hierPosFloat)
+        }
+        
+        // Validate hier_pos
+        if hierPos != 2 && hierPos != 4 && hierPos != 6 && hierPos != 8 && hierPos != 10 {
+            return entry, fmt.Errorf("invalid Hier. Pos. value: %d", hierPos)
+        }
+        entry.HierPos = hierPos
 
-		if err != nil {
-			// Try parsing as float first
-			hierPosFloat, floatErr := strconv.ParseFloat(row[4], 64)
-			if floatErr != nil {
-				return entry, fmt.Errorf("invalid Hier. Pos. format: %v", err)
-			}
-			// Convert float to int
-			hierPos = int(hierPosFloat)
-		}
-		
-		entry.HierPos = hierPos
+        // Parse indent
+        indent := countDashes(row[5])
+        if indent < 0 || indent > 12 {
+            return entry, fmt.Errorf("invalid Indent value: %d", indent)
+        }
+        entry.Indent = indent
 
-		entry.Indent = countDashes(row[5])
-		entry.Description = row[6]
-		
-		// Parse description start date
-		if row[7] != "" {
-			descrStartDate, err := time.Parse("02-01-2006", row[7])
-			if err != nil {
-				return entry, fmt.Errorf("invalid description start date format: %v", err)
-			}
-			entry.DescrStartDate = descrStartDate
-		}
-	} else {
-		return entry, fmt.Errorf("row does not have 8 columns")
-	}
-	
-	return entry, nil
+        entry.Description = row[6]
+        
+        // Parse description start date
+        if row[7] != "" {
+            descrStartDate, err := time.Parse("02-01-2006", row[7])
+            if err != nil {
+                return entry, fmt.Errorf("invalid description start date format: %v", err)
+            }
+            entry.DescrStartDate = descrStartDate
+        }
+    } else {
+        return entry, fmt.Errorf("row does not have 8 columns")
+    }
+    
+    return entry, nil
 }
 
 // Updated insertEntries to return the count of inserted/updated entries
