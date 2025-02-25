@@ -1,10 +1,12 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"muj/database"
 	"muj/utils"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,90 +19,119 @@ type NomenclatureEntry struct {
 	StartDate        time.Time // Start date
 	EndDate          *time.Time // End date (pointer because this field might be empty)
 	Language         string    // Language
-	HierPos          string    // Hier. Pos.
+	HierPos          int    // Hier. Pos.
 	Indent           int       // Indent
 	Description      string    // Description
 	DescrStartDate   time.Time // Descr. start date
 }
 
 func main() {
-	// Connect to database using the database package
-	db, err := database.Connect()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer db.Close()
+    // Connect to database using the database package
+    db, err := database.Connect()
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer db.Close()
 
-	// Create an instance of the reader by opening a target file
-	xl, err := xlsxreader.OpenFile(utils.GetAbsolutePath("./Nomenclature EN.xlsx"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer xl.Close()
+    // Create an instance of the reader by opening a target file
+    xl, err := xlsxreader.OpenFile(utils.GetAbsolutePath("./Nomenclature EN.xlsx"))
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer xl.Close()
 
-	// Check if the sheet exists
-	if len(xl.Sheets) == 0 {
-		log.Fatal("No sheets found in the Excel file")
-	}
+    // Check if the sheet exists
+    if len(xl.Sheets) == 0 {
+        log.Fatal("No sheets found in the Excel file")
+    }
 
-	// Iterate on the rows of data in chunks of 1000
-	chunkSize := 1000
-	rowCount := 0
-	entries := []NomenclatureEntry{}
-	firstRow := true
-	
-	// Add rowNumber counter
-	rowNumber := 0
-	for row := range xl.ReadRows(xl.Sheets[0]) {
-		rowNumber++ // Increment row counter
-		
-		// Skip the header row
-		if firstRow {
-			firstRow = false
-			continue
-		}
+    // Iterate on the rows of data in chunks of 1000
+    chunkSize := 1000
+    rowCount := 0
+    entries := []NomenclatureEntry{}
+    firstRow := true
+    
+    // Add counters
+    totalProcessed := 0
+    totalInserted := 0
+    totalErrors := 0
+    
+    // Add rowNumber counter
+    rowNumber := 0
+    for row := range xl.ReadRows(xl.Sheets[0]) {
+        rowNumber++ // Increment row counter
+        
+        // Skip the header row
+        if firstRow {
+            firstRow = false
+            continue
+        }
 
-		// Initialize cells with empty strings
-		cells := make([]string, 8)
+        // Initialize cells with empty strings
+        cells := make([]string, 8)
 
-		// Map cells based on their column letters
-		for _, cell := range row.Cells {
-			switch cell.Column {
-			case "A": // Goods code
-				cells[0] = cell.Value
-			case "B": // Start date
-				cells[1] = cell.Value
-			case "C": // End date
-				cells[2] = cell.Value
-			case "D": // Language
-				cells[3] = cell.Value
-			case "E": // Hier. Pos.
-				cells[4] = cell.Value
-			case "F": // Indent
-				cells[5] = cell.Value
-			case "G": // Description
-				cells[6] = cell.Value
-			case "H": // Descr. start date
-				cells[7] = cell.Value
-			}
-		}
+        // Map cells based on their column letters
+        for _, cell := range row.Cells {
+            switch cell.Column {
+            case "A": // Goods code
+                cells[0] = cell.Value
+            case "B": // Start date
+                cells[1] = cell.Value
+            case "C": // End date
+                cells[2] = cell.Value
+            case "D": // Language
+                cells[3] = cell.Value
+            case "E": // Hier. Pos.
+                cells[4] = cell.Value
+            case "F": // Indent
+                cells[5] = cell.Value
+            case "G": // Description
+                cells[6] = cell.Value
+            case "H": // Descr. start date
+                cells[7] = cell.Value
+            }
+        }
 
-		entry, err := parseNomenclatureRow(cells)
-		if err != nil {
-			log.Printf("Error parsing row %d: %v", rowNumber, err)
-			continue
-		}
-		
-		entries = append(entries, entry)
-		fmt.Printf("Parsed: row %d %+v\n", rowNumber, entry) // Print the structured data
-		
-		rowCount++
-		if rowCount >= chunkSize {
-			// break
-		}
-	}
-	
-	fmt.Printf("Parsed %d entries\n", len(entries))
+        entry, err := parseNomenclatureRow(cells)
+        if err != nil {
+            log.Printf("Error parsing row %d: %v", rowNumber, err)
+            totalErrors++
+            continue
+        }
+        
+        entries = append(entries, entry)
+        
+        rowCount++
+        totalProcessed++
+        
+        if rowCount >= chunkSize {
+            insertedCount, err := insertEntries(db, entries)
+            if err != nil {
+                log.Fatalf("Failed to insert entries: %v", err)
+            }
+            totalInserted += insertedCount
+            entries = []NomenclatureEntry{}
+            rowCount = 0
+        }
+    }
+    
+    fmt.Printf("Parsed %d entries\n", len(entries))
+
+    // After processing all entries in main()
+    if len(entries) > 0 {
+        insertedCount, err := insertEntries(db, entries)
+        if err != nil {
+            log.Fatalf("Failed to insert entries: %v", err)
+        }
+        totalInserted += insertedCount
+    }
+    
+    // Print summary statistics
+    fmt.Println("\n*** Import Summary ***")
+    fmt.Printf("Total rows processed: %d\n", totalProcessed)
+    fmt.Printf("Total entries inserted/updated: %d\n", totalInserted)
+    fmt.Printf("Total errors: %d\n", totalErrors)
+    fmt.Println("Import process completed!")
 }
 
 // Add this helper function to count dashes
@@ -141,7 +172,11 @@ func parseNomenclatureRow(row []string) (NomenclatureEntry, error) {
 		}
 		
 		entry.Language = row[3]
-		entry.HierPos = row[4]
+		hierPos, err := strconv.Atoi(row[4])
+		if err != nil {
+			return entry, fmt.Errorf("invalid Hier. Pos. format: %v", err)
+		}
+		entry.HierPos = hierPos
 		entry.Indent = countDashes(row[5])
 		entry.Description = row[6]
 		
@@ -158,4 +193,89 @@ func parseNomenclatureRow(row []string) (NomenclatureEntry, error) {
 	}
 	
 	return entry, nil
+}
+
+// Updated insertEntries to return the count of inserted/updated entries
+func insertEntries(db *sql.DB, entries []NomenclatureEntry) (int, error) {
+    tx, err := db.Begin()
+    if err != nil {
+        return 0, fmt.Errorf("failed to begin transaction: %v", err)
+    }
+    defer func() {
+        if r := recover(); r != nil {
+            tx.Rollback()
+        }
+    }()
+    
+    // Prepare statements for both tables
+    itemStmt, err := tx.Prepare(`
+        INSERT INTO nomenclature_items 
+        (goods_code, start_date, end_date, hier_pos, indent) 
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (goods_code, start_date, end_date) 
+        DO UPDATE SET hier_pos = $4, indent = $5, updated_at = NOW()
+        RETURNING id
+    `)
+    if err != nil {
+        tx.Rollback()
+        return 0, fmt.Errorf("failed to prepare item statement: %v", err)
+    }
+    defer itemStmt.Close()
+    
+    descStmt, err := tx.Prepare(`
+        INSERT INTO nomenclature_descriptions
+        (nomenclature_item_id, language, description, descr_start_date)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (nomenclature_item_id, language)
+        DO UPDATE SET description = $3, descr_start_date = $4, updated_at = NOW()
+    `)
+    if err != nil {
+        tx.Rollback()
+        return 0, fmt.Errorf("failed to prepare description statement: %v", err)
+    }
+    defer descStmt.Close()
+    
+    // Track successful inserts/updates
+    successCount := 0
+    
+    // Process entries
+    for _, entry := range entries {
+        
+        // Insert into nomenclature_items and get the ID
+        var itemID int
+        err = itemStmt.QueryRow(
+            entry.GoodsCode,
+            entry.StartDate,
+            entry.EndDate,
+            entry.HierPos,
+            entry.Indent,
+        ).Scan(&itemID)
+        
+        if err != nil {
+            tx.Rollback()
+            return successCount, fmt.Errorf("failed to insert item %s: %v", entry.GoodsCode, err)
+        }
+        
+        // Insert into nomenclature_descriptions
+        _, err = descStmt.Exec(
+            itemID,
+            entry.Language,
+            entry.Description,
+            entry.DescrStartDate,
+        )
+        
+        if err != nil {
+            tx.Rollback()
+            return successCount, fmt.Errorf("failed to insert description for item %s: %v", entry.GoodsCode, err)
+        }
+        
+        successCount++
+    }
+    
+    err = tx.Commit()
+    if err != nil {
+        return 0, err
+    }
+    
+    return successCount, nil
 }
