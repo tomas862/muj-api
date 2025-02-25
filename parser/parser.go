@@ -34,7 +34,7 @@ func main() {
     defer db.Close()
 
     // Create an instance of the reader by opening a target file
-    xl, err := xlsxreader.OpenFile(utils.GetAbsolutePath("./Nomenclature EN.xlsx"))
+    xl, err := xlsxreader.OpenFile(utils.GetAbsolutePath("./files/nomenclatures/Nomenclature LT.xlsx"))
     if err != nil {
         log.Fatal(err)
     }
@@ -172,11 +172,21 @@ func parseNomenclatureRow(row []string) (NomenclatureEntry, error) {
 		}
 		
 		entry.Language = row[3]
+		// Replace the current hierPos parsing code
 		hierPos, err := strconv.Atoi(row[4])
+
 		if err != nil {
-			return entry, fmt.Errorf("invalid Hier. Pos. format: %v", err)
+			// Try parsing as float first
+			hierPosFloat, floatErr := strconv.ParseFloat(row[4], 64)
+			if floatErr != nil {
+				return entry, fmt.Errorf("invalid Hier. Pos. format: %v", err)
+			}
+			// Convert float to int
+			hierPos = int(hierPosFloat)
 		}
+		
 		entry.HierPos = hierPos
+
 		entry.Indent = countDashes(row[5])
 		entry.Description = row[6]
 		
