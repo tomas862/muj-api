@@ -19,12 +19,13 @@ type NomenclatureData struct {
     Description     string
     Language        string
     DescrStartDate  string
+    SectionName     string
 }
 
 func main() {
     // Connect to database using the database package
     db, err := database.Connect()
-    if err != nil {
+    if (err != nil) {
         log.Fatal(err)
     }
     defer db.Close()
@@ -36,9 +37,15 @@ func main() {
     for {
         // Select records from the database in chunks
         rows, err := db.Query(`
-            SELECT ni.id, ni.goods_code, ni.start_date, ni.end_date, ni.hier_pos, ni.indent, nd.description, nd.language, nd.descr_start_date
+            SELECT ni.id, ni.goods_code, ni.start_date, ni.end_date, ni.hier_pos, ni.indent, 
+                   nd.description, nd.language, nd.descr_start_date, sd.name as section_name
             FROM nomenclature_items ni
             JOIN nomenclature_descriptions nd ON ni.id = nd.nomenclature_item_id
+            JOIN section_chapter_mapping scm ON 
+                CAST(SUBSTRING(ni.goods_code, 1, 2) AS INTEGER) = scm.chapter_id
+            JOIN section_descriptions sd ON 
+                scm.section_number = sd.section_number AND
+                nd.language = sd.language
             ORDER BY ni.id
             LIMIT $1 OFFSET $2
         `, chunkSize, offset)
@@ -56,7 +63,7 @@ func main() {
             var data NomenclatureData
             var endDate sql.NullString
 
-            err := rows.Scan(&data.ID, &data.GoodsCode, &data.StartDate, &endDate, &data.HierPos, &data.Indent, &data.Description, &data.Language, &data.DescrStartDate)
+            err := rows.Scan(&data.ID, &data.GoodsCode, &data.StartDate, &endDate, &data.HierPos, &data.Indent, &data.Description, &data.Language, &data.DescrStartDate, &data.SectionName)
             if err != nil {
                 log.Fatal(err)
             }
