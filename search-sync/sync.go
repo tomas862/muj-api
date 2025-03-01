@@ -135,10 +135,20 @@ func main() {
     // Build the hierarchy
     buildHierarchy(allItems)
 
-    // Extract the top-level items (those with hier_pos = 2)
+    // Create a map to track which items are already children of other items
+    isChild := make(map[int]bool)
+    
+    // Mark all items that are children of other items
+    for _, item := range allItems {
+        for _, child := range item.Children {
+            isChild[child.ID] = true
+        }
+    }
+
+    // Extract only the true top-level items (those that aren't children of any other item)
     topLevelItems := []*NomenclatureData{}
     for _, item := range allItems {
-        if item.HierPos == 2 {
+        if !isChild[item.ID] {
             topLevelItems = append(topLevelItems, item)
         }
     }
