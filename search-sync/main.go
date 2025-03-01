@@ -24,6 +24,14 @@ type NomenclatureData struct {
     SectionName     string
 }
 
+// NomenclatureResult represents the structured result for a goods code with multi-language support
+type NomenclatureResult struct {
+    GoodsCode      string              `json:"goods_code"`
+    Description    map[string]string   `json:"description"`
+    Categories     map[string][]string `json:"categories"`
+    CategoriesPath map[string]string   `json:"categories_path"`
+}
+
 func main () {
 	// Connect to database using the database package
 	db, err := database.Connect()
@@ -101,12 +109,7 @@ func main () {
     fmt.Printf("Found %d unique hierarchy paths\n", len(hierarchyData))
     
 	// Create a map to store results by goodsCode
-	resultMap := make(map[string]struct {
-		GoodsCode      string              `json:"goods_code"`
-		Description    map[string]string   `json:"description"`
-		Categories     map[string][]string `json:"categories"`
-		CategoriesPath map[string]string   `json:"categories_path"`
-	})
+	resultMap := make(map[string]NomenclatureResult)
 
     // Now process each entry to build categories
     for _, entriesWithLanguage := range hierarchyData {
@@ -121,12 +124,7 @@ func main () {
 				result, exists := resultMap[entry.GoodsCode]
 				if !exists {
 					// Initialize a new result structure
-					result = struct {
-						GoodsCode      string              `json:"goods_code"`
-						Description    map[string]string   `json:"description"`
-						Categories     map[string][]string `json:"categories"`
-						CategoriesPath map[string]string   `json:"categories_path"`
-					}{
+					result = NomenclatureResult{
 						GoodsCode:      entry.GoodsCode,
 						Description:    make(map[string]string),
 						Categories:     make(map[string][]string),
@@ -173,12 +171,7 @@ func main () {
     }
 
 	// Convert the map to a slice for output
-	results := []struct {
-		GoodsCode      string              `json:"goods_code"`
-		Description    map[string]string   `json:"description"`
-		Categories     map[string][]string `json:"categories"`
-		CategoriesPath map[string]string   `json:"categories_path"`
-	}{}
+	results := []NomenclatureResult{}
 
 	for _, result := range resultMap {
 		results = append(results, result)
