@@ -123,7 +123,10 @@ func main () {
 				segmentToCheck := ""
 				pathSegments := strings.Split(entry.HierarchyPath, ".")
 
-				for _, segment := range pathSegments {
+				for i, segment := range pathSegments {
+					if i == len(pathSegments)-1 {
+						break
+					}
 					segmentToCheck += segment
 					if _, exists := hierarchyData[segmentToCheck]; exists {
 						for _, data := range hierarchyData[segmentToCheck][language] {
@@ -153,14 +156,12 @@ func main () {
 				}
 
 				results = append(results, result)
-				
-				if result.GoodsCode == "0101210000 10" {
-					jsonResult, err := json.MarshalIndent(result, "", "  ")
-					if err != nil {
-						log.Fatal(err)
-					}
-					fmt.Printf("Result: %s\n\n", jsonResult)
+
+				jsonResult, err := json.MarshalIndent(result, "", "  ")
+				if err != nil {
+					log.Fatal(err)
 				}
+				fmt.Printf("Result: %s\n\n", jsonResult)
 			}	
 		}
     }
