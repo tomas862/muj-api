@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"muj/database"
@@ -101,6 +102,7 @@ func main () {
     
 	// Create a map to store results by goodsCode and language
 	results := []struct {
+		GoodsCode      string   `json:"goods_code"`
 		Description    string   `json:"description"`
 		Categories     map[string][]string `json:"categories"`
 		CategoriesPath map[string]string   `json:"categories_path"`
@@ -114,7 +116,7 @@ func main () {
 				return entries[i].Indent < entries[j].Indent
 			})
 			
-			for _, entry := range entries {
+			for i, entry := range entries {
 				categories := map[string][]string{}
 				categories[language] = append(categories[language], entry.SectionName)
 				
@@ -131,22 +133,34 @@ func main () {
 					segmentToCheck += "."
 				}
 
+				if i > 0 && entries[i-1].Indent < entry.Indent {
+					categories[language] = append(categories[language], entries[i-1].Description)
+				}
+
 				categoriesPath := map[string]string{}
 				categoriesPath[language] = strings.Join(categories[language], " > ")
 
 				result := struct {
+					GoodsCode      string   `json:"goods_code"`
 					Description    string   `json:"description"`
 					Categories     map[string][]string `json:"categories"`
 					CategoriesPath map[string]string   `json:"categories_path"`
 				}{
+					GoodsCode:      entry.GoodsCode,
 					Description:    entry.Description,
 					Categories:     categories,
 					CategoriesPath: categoriesPath,
 				}
 
 				results = append(results, result)
-
-				fmt.Printf("Result: %+v\n\n", result)
+				
+				if result.GoodsCode == "0101210000 10" {
+					jsonResult, err := json.MarshalIndent(result, "", "  ")
+					if err != nil {
+						log.Fatal(err)
+					}
+					fmt.Printf("Result: %s\n\n", jsonResult)
+				}
 			}	
 		}
     }
