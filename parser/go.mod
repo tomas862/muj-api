@@ -1,4 +1,4 @@
-module muj/new-parser
+module muj/parser
 
 go 1.23.4
 
