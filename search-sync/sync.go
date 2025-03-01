@@ -84,6 +84,7 @@ func main() {
             ORDER BY ni.id
             LIMIT $1 OFFSET $2
         `, chunkSize, offset)
+        
         if err != nil {
             log.Fatal(err)
         }
