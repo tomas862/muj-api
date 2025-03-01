@@ -10,7 +10,7 @@ CREATE TABLE nomenclatures (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE(goods_code, start_date, end_date)
+    UNIQUE(goods_code)
 );
 
 CREATE TABLE nomenclature_descriptions (

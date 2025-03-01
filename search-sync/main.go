@@ -100,13 +100,13 @@ func main () {
 	// Print the number of unique hierarchy paths found
     fmt.Printf("Found %d unique hierarchy paths\n", len(hierarchyData))
     
-	// Create a map to store results by goodsCode and language
-	results := []struct {
-		GoodsCode      string   `json:"goods_code"`
-		Description    string   `json:"description"`
+	// Create a map to store results by goodsCode
+	resultMap := make(map[string]struct {
+		GoodsCode      string              `json:"goods_code"`
+		Description    map[string]string   `json:"description"`
 		Categories     map[string][]string `json:"categories"`
 		CategoriesPath map[string]string   `json:"categories_path"`
-	}{}
+	})
 
     // Now process each entry to build categories
     for _, entriesWithLanguage := range hierarchyData {
@@ -117,8 +117,28 @@ func main () {
 			})
 			
 			for i, entry := range entries {
-				categories := map[string][]string{}
-				categories[language] = append(categories[language], entry.SectionName)
+				// Check if we already have an entry for this goods code
+				result, exists := resultMap[entry.GoodsCode]
+				if !exists {
+					// Initialize a new result structure
+					result = struct {
+						GoodsCode      string              `json:"goods_code"`
+						Description    map[string]string   `json:"description"`
+						Categories     map[string][]string `json:"categories"`
+						CategoriesPath map[string]string   `json:"categories_path"`
+					}{
+						GoodsCode:      entry.GoodsCode,
+						Description:    make(map[string]string),
+						Categories:     make(map[string][]string),
+						CategoriesPath: make(map[string]string),
+					}
+				}
+
+				// Add this language's description
+				result.Description[language] = entry.Description
+				
+				// Process categories for this language
+				categories := []string{entry.SectionName}
 				
 				segmentToCheck := ""
 				pathSegments := strings.Split(entry.HierarchyPath, ".")
@@ -129,40 +149,47 @@ func main () {
 					}
 					segmentToCheck += segment
 					if _, exists := hierarchyData[segmentToCheck]; exists {
-						for _, data := range hierarchyData[segmentToCheck][language] {
-							categories[language] = append(categories[language], data.Description)
+						if langData, ok := hierarchyData[segmentToCheck][language]; ok {
+							for _, data := range langData {
+								categories = append(categories, data.Description)
+							}
 						}
 					}
 					segmentToCheck += "."
 				}
 
 				if i > 0 && entries[i-1].Indent < entry.Indent {
-					categories[language] = append(categories[language], entries[i-1].Description)
+					categories = append(categories, entries[i-1].Description)
 				}
 
-				categoriesPath := map[string]string{}
-				categoriesPath[language] = strings.Join(categories[language], " > ")
-
-				result := struct {
-					GoodsCode      string   `json:"goods_code"`
-					Description    string   `json:"description"`
-					Categories     map[string][]string `json:"categories"`
-					CategoriesPath map[string]string   `json:"categories_path"`
-				}{
-					GoodsCode:      entry.GoodsCode,
-					Description:    entry.Description,
-					Categories:     categories,
-					CategoriesPath: categoriesPath,
-				}
-
-				results = append(results, result)
-
-				jsonResult, err := json.MarshalIndent(result, "", "  ")
-				if err != nil {
-					log.Fatal(err)
-				}
-				fmt.Printf("Result: %s\n\n", jsonResult)
-			}	
+				// Store categories and path for this language
+				result.Categories[language] = categories
+				result.CategoriesPath[language] = strings.Join(categories, " > ")
+				
+				// Update the map
+				resultMap[entry.GoodsCode] = result
+			}
 		}
     }
+
+	// Convert the map to a slice for output
+	results := []struct {
+		GoodsCode      string              `json:"goods_code"`
+		Description    map[string]string   `json:"description"`
+		Categories     map[string][]string `json:"categories"`
+		CategoriesPath map[string]string   `json:"categories_path"`
+	}{}
+
+	for _, result := range resultMap {
+		results = append(results, result)
+	}
+
+	// Output the results
+	for _, result := range results {
+		jsonResult, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Result: %s\n\n", jsonResult)
+	}
 }

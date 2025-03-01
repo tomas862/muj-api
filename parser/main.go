@@ -35,7 +35,7 @@ func main() {
     defer db.Close()
 
 	// Create an instance of the reader by opening a target file
-    xl, err := xlsxreader.OpenFile(utils.GetAbsolutePath("./files/nomenclatures/Nomenclature EN.xlsx"))
+    xl, err := xlsxreader.OpenFile(utils.GetAbsolutePath("./files/nomenclatures/Nomenclature LT.xlsx"))
     if err != nil {
         log.Fatal(err)
     }
@@ -264,7 +264,7 @@ func insertEntries(db *sql.DB, entries []NomenclatureEntry) (int, error) {
         INSERT INTO nomenclatures 
         (goods_code, start_date, end_date, hierarchy_path, indent) 
         VALUES ($1, $2, $3, $4::ltree, $5)
-        ON CONFLICT (goods_code, start_date, end_date) 
+        ON CONFLICT (goods_code) 
         DO UPDATE SET hierarchy_path = $4::ltree, indent = $5, updated_at = NOW()
         RETURNING id
     `)
