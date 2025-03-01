@@ -20,32 +20,33 @@ type NomenclatureEntry struct {
 	EndDate          *time.Time // End date (pointer because this field might be empty)
 	Language         string    // Language
 	HierPos          int    // Hier. Pos.
+	HierarchyPath         string    // Hier. Path
 	Indent           int       // Indent
 	Description      string    // Description
 	DescrStartDate   time.Time // Descr. start date
 }
 
 func main() {
-    // Connect to database using the database package
+	// Connect to database using the database package
     db, err := database.Connect()
     if err != nil {
         log.Fatal(err)
     }
     defer db.Close()
 
-    // Create an instance of the reader by opening a target file
-    xl, err := xlsxreader.OpenFile(utils.GetAbsolutePath("./files/nomenclatures/Nomenclature LT.xlsx"))
+	// Create an instance of the reader by opening a target file
+    xl, err := xlsxreader.OpenFile(utils.GetAbsolutePath("./files/nomenclatures/Nomenclature EN.xlsx"))
     if err != nil {
         log.Fatal(err)
     }
     defer xl.Close()
-
-    // Check if the sheet exists
+	
+	// Check if the sheet exists
     if len(xl.Sheets) == 0 {
         log.Fatal("No sheets found in the Excel file")
     }
 
-    // Iterate on the rows of data in chunks of 1000
+	// Iterate on the rows of data in chunks of 1000
     chunkSize := 1000
     rowCount := 0
     entries := []NomenclatureEntry{}
@@ -55,13 +56,12 @@ func main() {
     totalProcessed := 0
     totalInserted := 0
     totalErrors := 0
-    
-    // Add rowNumber counter
+
+	// Add rowNumber counter
     rowNumber := 0
-    for row := range xl.ReadRows(xl.Sheets[0]) {
-        rowNumber++ // Increment row counter
-        
-        // Skip the header row
+
+	for row := range xl.ReadRows(xl.Sheets[0]) {
+		// Skip the header row
         if firstRow {
             firstRow = false
             continue
@@ -70,7 +70,7 @@ func main() {
         // Initialize cells with empty strings
         cells := make([]string, 8)
 
-        // Map cells based on their column letters
+		// Map cells based on their column letters
         for _, cell := range row.Cells {
             switch cell.Column {
             case "A": // Goods code
@@ -92,19 +92,29 @@ func main() {
             }
         }
 
-        entry, err := parseNomenclatureRow(cells)
-        if err != nil {
+		entry, err := parseNomenclatureRow(cells)
+
+		if err != nil {
             log.Printf("Error parsing row %d: %v", rowNumber, err)
             totalErrors++
             continue
         }
-        
-        entries = append(entries, entry)
+
+		hierPath, err := getHierarchyPath(entry.GoodsCode, entry.HierPos)
+
+        if err != nil {
+            log.Printf("Error getting hierarchy path for row %d: %v", rowNumber, err)
+            totalErrors++
+            continue
+        }
+
+		entry.HierarchyPath = hierPath
+		entries = append(entries, entry)
         
         rowCount++
         totalProcessed++
-        
-        if rowCount >= chunkSize {
+
+		if rowCount >= chunkSize {
             insertedCount, err := insertEntries(db, entries)
             if err != nil {
                 log.Fatalf("Failed to insert entries: %v", err)
@@ -113,9 +123,9 @@ func main() {
             entries = []NomenclatureEntry{}
             rowCount = 0
         }
-    }
-    
-    fmt.Printf("Parsed %d entries\n", len(entries))
+	}
+
+	    fmt.Printf("Parsed %d entries\n", len(entries))
 
     // After processing all entries in main()
     if len(entries) > 0 {
@@ -134,6 +144,33 @@ func main() {
     fmt.Println("Import process completed!")
 }
 
+// getCategoryKey returns the category key based on the goods code and hier_pos
+func getHierarchyPath(goodsCode string, hierPos int) (string, error) {
+    if goodsCode == "" {
+        return goodsCode, fmt.Errorf("invalid goods code")
+    }
+    
+    if hierPos <= 0 || hierPos > 10 || hierPos%2 != 0 {
+        return "", fmt.Errorf("invalid hierarchy position: %d", hierPos)
+    }
+    
+    if len(goodsCode) < hierPos {
+        return "", fmt.Errorf("goods code '%s' too short for hierarchy position %d", goodsCode, hierPos)
+    }
+    
+    var result strings.Builder
+    
+    // Iterate through the code in steps of 2 up to hierPos
+    for i := 2; i <= hierPos; i += 2 {
+        if i > 2 {
+            result.WriteString(".")
+        }
+        result.WriteString(goodsCode[:i])
+    }
+    
+    return result.String(), nil
+}
+
 // Add this helper function to count dashes
 func countDashes(s string) int {
     if s == "" {
@@ -147,12 +184,11 @@ func countDashes(s string) int {
 
 // parseNomenclatureRow converts a row of Excel data into a structured NomenclatureEntry
 func parseNomenclatureRow(row []string) (NomenclatureEntry, error) {
-    entry := NomenclatureEntry{}
-    
-    if len(row) == 8 {
-        entry.GoodsCode = row[0]
-        
-        // Parse dates - handle empty dates
+	entry := NomenclatureEntry{}
+
+	if len(row) == 8 {
+		entry.GoodsCode = row[0]
+		// Parse dates - handle empty dates
         if row[1] != "" {
             startDate, err := time.Parse("02-01-2006", row[1])
             if err != nil {
@@ -160,8 +196,8 @@ func parseNomenclatureRow(row []string) (NomenclatureEntry, error) {
             }
             entry.StartDate = startDate
         }
-        
-        if row[2] != "" {
+
+		if row[2] != "" {
             endDate, err := time.Parse("02-01-2006", row[2])
             if err != nil {
                 return entry, fmt.Errorf("invalid end date format: %v", err)
@@ -170,8 +206,8 @@ func parseNomenclatureRow(row []string) (NomenclatureEntry, error) {
         }
         
         entry.Language = row[3]
-        
-        // Parse hier_pos
+
+		// Parse hier_pos
         hierPos, err := strconv.Atoi(row[4])
         if err != nil {
             hierPosFloat, floatErr := strconv.ParseFloat(row[4], 64)
@@ -195,8 +231,8 @@ func parseNomenclatureRow(row []string) (NomenclatureEntry, error) {
         entry.Indent = indent
 
         entry.Description = row[6]
-        
-        // Parse description start date
+
+		// Parse description start date
         if row[7] != "" {
             descrStartDate, err := time.Parse("02-01-2006", row[7])
             if err != nil {
@@ -204,14 +240,14 @@ func parseNomenclatureRow(row []string) (NomenclatureEntry, error) {
             }
             entry.DescrStartDate = descrStartDate
         }
-    } else {
-        return entry, fmt.Errorf("row does not have 8 columns")
-    }
-    
-    return entry, nil
+
+	} else {
+		return entry, fmt.Errorf("row does not have 8 columns")
+	}
+
+	return entry, nil
 }
 
-// Updated insertEntries to return the count of inserted/updated entries
 func insertEntries(db *sql.DB, entries []NomenclatureEntry) (int, error) {
     tx, err := db.Begin()
     if err != nil {
@@ -225,13 +261,14 @@ func insertEntries(db *sql.DB, entries []NomenclatureEntry) (int, error) {
     
     // Prepare statements for both tables
     itemStmt, err := tx.Prepare(`
-        INSERT INTO nomenclature_items 
-        (goods_code, start_date, end_date, hier_pos, indent) 
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO nomenclatures 
+        (goods_code, start_date, end_date, hierarchy_path, indent) 
+        VALUES ($1, $2, $3, $4::ltree, $5)
         ON CONFLICT (goods_code, start_date, end_date) 
-        DO UPDATE SET hier_pos = $4, indent = $5, updated_at = NOW()
+        DO UPDATE SET hierarchy_path = $4::ltree, indent = $5, updated_at = NOW()
         RETURNING id
     `)
+
     if err != nil {
         tx.Rollback()
         return 0, fmt.Errorf("failed to prepare item statement: %v", err)
@@ -240,9 +277,9 @@ func insertEntries(db *sql.DB, entries []NomenclatureEntry) (int, error) {
     
     descStmt, err := tx.Prepare(`
         INSERT INTO nomenclature_descriptions
-        (nomenclature_item_id, language, description, descr_start_date)
+        (nomenclature_id, language, description, descr_start_date)
         VALUES ($1, $2, $3, $4)
-        ON CONFLICT (nomenclature_item_id, language)
+        ON CONFLICT (nomenclature_id, language)
         DO UPDATE SET description = $3, descr_start_date = $4, updated_at = NOW()
     `)
     if err != nil {
@@ -256,14 +293,13 @@ func insertEntries(db *sql.DB, entries []NomenclatureEntry) (int, error) {
     
     // Process entries
     for _, entry := range entries {
-        
         // Insert into nomenclature_items and get the ID
         var itemID int
         err = itemStmt.QueryRow(
             entry.GoodsCode,
             entry.StartDate,
             entry.EndDate,
-            entry.HierPos,
+            entry.HierarchyPath,
             entry.Indent,
         ).Scan(&itemID)
         
