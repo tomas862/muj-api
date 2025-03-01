@@ -80,12 +80,12 @@ func main () {
 					data.EndDate = nil
 				}
 
-				 // Initialize the inner map if it doesn't exist
+				// Initialize the inner map if it doesn't exist
 				if _, exists := hierarchyData[data.HierarchyPath]; !exists {
 					hierarchyData[data.HierarchyPath] = make(map[string][]NomenclatureData)
 				}
 
-				// Add the data to the map, using HierarchyPath as the key and organizing by language
+				// Add the data to the map, using HierarchyPath as the key
                 hierarchyData[data.HierarchyPath][data.Language] = append(hierarchyData[data.HierarchyPath][data.Language], data)
 			}
 		}
@@ -100,11 +100,11 @@ func main () {
     fmt.Printf("Found %d unique hierarchy paths\n", len(hierarchyData))
     
 	// Create a map to store results by goodsCode and language
-	results := make(map[string]map[string]struct {
-    	Description    string   `json:"description"`
-    	Categories     map[string][]string `json:"categories"`
-    	CategoriesPath map[string]string   `json:"categories_path"`
-	})
+	results := []struct {
+		Description    string   `json:"description"`
+		Categories     map[string][]string `json:"categories"`
+		CategoriesPath map[string]string   `json:"categories_path"`
+	}{}
 
     // Now process each entry to build categories
     for _, entriesWithLanguage := range hierarchyData {
@@ -144,7 +144,7 @@ func main () {
 					CategoriesPath: categoriesPath,
 				}
 
-				results[entry.GoodsCode][entry.Language] = result
+				results = append(results, result)
 
 				fmt.Printf("Result: %+v\n\n", result)
 			}	
