@@ -75,18 +75,11 @@ func (p *NomenclatureParser) MapRow(rowData RowData) (interface{}, error) {
         }
         hierPos = int(hierPosFloat)
     }
-    
-    // Validate hier_pos
-    if hierPos != 2 && hierPos != 4 && hierPos != 6 && hierPos != 8 && hierPos != 10 {
-        return nil, fmt.Errorf("invalid Hier. Pos. value: %d", hierPos)
-    }
+	
     entry.HierPos = hierPos
 
     // Parse indent
     indent := countDashes(cells[5])
-    if indent < 0 || indent > 12 {
-        return nil, fmt.Errorf("invalid Indent value: %d", indent)
-    }
     entry.Indent = indent
 
     entry.Description = cells[6]
