@@ -22,16 +22,24 @@ type NomenclatureEntry struct {
 }
 
 // NomenclatureParser implements the Parser interface for nomenclature files
-type NomenclatureParser struct{}
+type NomenclatureParser struct {
+    BaseExcelParser // Embed the BaseExcelParser to inherit ReadRows
+}
 
 // Initialize prepares the parser for processing
 func (p *NomenclatureParser) Initialize() error {
-    // Any initialization needed for the nomenclature parser
+    // Any nomenclature specific initialization
     return nil
 }
 
-// MapRow maps a row of strings to a NomenclatureEntry
-func (p *NomenclatureParser) MapRow(cells []string) (interface{}, error) {
+// MapRow now expects an ExcelRow and converts it to a NomenclatureEntry
+func (p *NomenclatureParser) MapRow(rowData RowData) (interface{}, error) {
+    row, ok := rowData.(ExcelRow)
+    if !ok {
+        return nil, fmt.Errorf("expected ExcelRow, got %T", rowData)
+    }
+    
+    cells := row.Cells
     if len(cells) < 8 {
         return nil, fmt.Errorf("insufficient columns: need at least 8 columns")
     }

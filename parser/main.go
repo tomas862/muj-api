@@ -6,10 +6,6 @@ import (
     "fmt"
     "log"
     "muj/database"
-    "muj/utils"
-    "os"
-
-    "github.com/thedatashed/xlsxreader"
 )
 
 // ParserConfig holds configuration for the parser
@@ -19,10 +15,14 @@ type ParserConfig struct {
     ChunkSize  int
 }
 
+// RowData represents a single row of data from any source
+type RowData interface{}
+
 // Parser interface that all parsers must implement
 type Parser interface {
     Initialize() error
-    MapRow([]string) (interface{}, error)  // Maps Excel row to a specific entry type
+    ReadRows(config ParserConfig) (<-chan RowData, error)  // Returns a channel of rows from the data source
+    MapRow(RowData) (interface{}, error)  // Maps row data to a specific entry type
     ProcessEntry(interface{}) error        // Performs any processing on an entry before it's added to the batch
     SaveEntries(db *sql.DB, entries []interface{}) (int, error)  // Saves a batch of entries to the database
 }
@@ -33,13 +33,6 @@ func main() {
     filePath := flag.String("file", "", "Path to the file to parse. E.g ./files/nomenclatures/Nomenclature EN.xlsx")
     chunkSize := flag.Int("chunk", 1000, "Size of chunks to process")
     flag.Parse()
-
-    // Validate arguments
-    if *filePath == "" {
-        fmt.Println("Error: File path is required")
-        flag.Usage()
-        os.Exit(1)
-    }
 
     // Create parser configuration
     config := ParserConfig{
@@ -90,50 +83,28 @@ func createParser(parserType string) (Parser, error) {
     }
 }
 
-// readAndProcessFile handles the common logic of reading an Excel file and processing entries
+// readAndProcessFile handles the common logic of reading data and processing entries
 func readAndProcessFile(db *sql.DB, parser Parser, config ParserConfig) (int, int, int) {
-    // Create an instance of the reader by opening the target file
-    xl, err := xlsxreader.OpenFile(utils.GetAbsolutePath(config.FilePath))
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer xl.Close()
-    
-    // Check if the sheet exists
-    if len(xl.Sheets) == 0 {
-        log.Fatal("No sheets found in the Excel file")
-    }
-
     // Initialize counters and batch
     totalProcessed := 0
     totalInserted := 0
     totalErrors := 0
     rowCount := 0
     entries := make([]interface{}, 0, config.ChunkSize)
-    firstRow := true
     rowNumber := 0
 
-    // Process rows
-    for row := range xl.ReadRows(xl.Sheets[0]) {
-        rowNumber++
-        
-        // Skip the header row
-        if firstRow {
-            firstRow = false
-            continue
-        }
+    // Get channel of rows from the parser
+    rowsChan, err := parser.ReadRows(config)
+    if err != nil {
+        log.Fatalf("Failed to read file: %v", err)
+    }
 
-        // Initialize cells with empty strings and map by column
-        cells := make([]string, 30) // Larger capacity for different parsers
-        for _, cell := range row.Cells {
-            colIndex := int(cell.Column[0] - 'A') // Convert column letter to index (A=0, B=1, etc.)
-            if colIndex >= 0 && colIndex < len(cells) {
-                cells[colIndex] = cell.Value
-            }
-        }
+    // Process rows
+    for row := range rowsChan {
+        rowNumber++
 
         // Parse the row using the specific parser
-        entry, err := parser.MapRow(cells)
+        entry, err := parser.MapRow(row)
         if err != nil {
             log.Printf("Error parsing row %d: %v", rowNumber, err)
             totalErrors++
