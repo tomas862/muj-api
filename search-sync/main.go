@@ -22,7 +22,7 @@ type NomenclatureData struct {
     Language        string
     DescrStartDate  string
     SectionName     string
-	IsLeaf		 	bool
+	IsLeaf		 	*bool
 }
 
 // NomenclatureResult represents the structured result for a goods code with multi-language support
@@ -82,6 +82,7 @@ func main () {
 			for rows.Next() {
 				var data NomenclatureData
 				var endDate sql.NullString
+				var isLeaf sql.NullBool
 
 				err := rows.Scan(
 					&data.ID,
@@ -94,7 +95,7 @@ func main () {
 					&data.Language,
 					&data.DescrStartDate,
 					&data.SectionName,
-					&data.IsLeaf,
+					&isLeaf,
 				)
 				if err != nil {
 					log.Fatal(err)
@@ -104,6 +105,12 @@ func main () {
 					data.EndDate = &endDate.String
 				} else {
 					data.EndDate = nil
+				}
+
+				if isLeaf.Valid {
+					data.IsLeaf = &isLeaf.Bool
+				} else {
+					data.IsLeaf = nil
 				}
 
 				// Initialize the inner map if it doesn't exist
