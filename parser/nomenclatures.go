@@ -10,15 +10,64 @@ import (
 
 // NomenclatureEntry represents a single row from the nomenclature Excel file
 type NomenclatureEntry struct {
-    GoodsCode      string     // Goods code
-    StartDate      time.Time  // Start date
-    EndDate        *time.Time // End date (pointer because this field might be empty)
-    Language       string     // Language
-    HierPos        int        // Hier. Pos.
-    HierarchyPath  string     // Hier. Path
-    Indent         int        // Indent
-    Description    string     // Description
-    DescrStartDate time.Time  // Descr. start date
+	/**
+	    The goods code is a structured 10-digit code, the first six digits of which contain the code defined by
+	 	the Harmonised Commodity Description and Coding System (HS). The first two digits of the HS
+		code represent the Chapter. There are 99 Chapters grouped according to material and use. The HS
+		codes are revised every 5 years.
+		Chapter 77 is currently unused and reserved for future use.
+		Chapter 99 contains special Combined Nomenclature codes that are used for certain specific
+		movements of goods.
+		The HS codes are broken down at 8-digit level into the Combined Nomenclature (CN). The
+		Combined Nomenclature is revised and published every year based on the HS codes.
+		As the Combined Nomenclature is not sufficiently detailed to support the Union tariff and
+		commercial legislation, the 8-digit codes can be broken down into 10-digit codes called "TARIC
+		codes". These codes are created at any time, according to the legislative needs.
+		The structure is therefore the following:
+		- Chapter (digits 1-2);
+		- HS (1-6);
+		- CN (7-8);
+		- TARIC (9-10).
+		In the TARIC database, the goods codes are suffixed by a 2-digit code called the product line suffix
+		(10, 20, 30… or 80). The product line suffix is a technical code that is necessary to build the
+		structure of the goods code nomenclature in a proper sequence.
+		If the suffix is different than "80", this means the goods code is an intermediary code that only serves
+		as a heading for sub-products; those codes are not declarable codes in Customs.
+		If the suffix is "80", this means that the goods code represent actual classified goods or groups of
+		goods. This does not mean per se that the goods code can be declared in the SAD or in the EUCDM.
+		A goods code can only be declared if the suffix is "80" and if it is not broken down into goods codes
+		of lower level.
+	*/
+    GoodsCode      string     // 10-digit goods codes + 2-digit suffix;
+    StartDate      time.Time  // Validity start date of the codes;
+    EndDate        *time.Time // Validity end date of the codes (can be empty);
+    Language       string     // Language codes of the descriptions;
+	/**
+	    Hierarchical level of the code.
+		The codes in the TARIC database are always 10 digit long because they are padded with pairs
+		of zeroes (00). The zero-padding has no effect on the level of the codes. The level of the code
+		is defined by the right-most pair of digits which is different than 00.
+		Example
+		0702 00 00 00 (tomatoes) is of level 4.
+		0702 00 00 07 (cherry tomatoes) is of level 10.
+		The product line suffix is ignored to determine the level of a code.
+	*/
+    HierPos        int
+    HierarchyPath  string     // Postgres Ltree type constructed hierarchy from goods code for easier access of the date later on.
+	/**
+		The indentation of the description in the nomenclature, represented by a number of dashes
+		(indents). The indentation of goods can evolve independently of the goods itself if the goods
+		are moved in the hierarchical structure without being redefined.;
+	*/
+    Indent         int
+	/**
+	    Description of the codes in all TARIC languages for the description period (column H).
+		Goods codes are associated to description periods that define a period of time during which
+		the description of the goods remains unchanged. A unique description period is defined for all
+		languages
+	*/ 
+    Description    string
+    DescrStartDate time.Time  // Description start date: first day of validity of the description period.
 }
 
 // NomenclatureParser implements the Parser interface for nomenclature files
@@ -75,7 +124,7 @@ func (p *NomenclatureParser) MapRow(rowData RowData) (interface{}, error) {
         }
         hierPos = int(hierPosFloat)
     }
-	
+
     entry.HierPos = hierPos
 
     // Parse indent
