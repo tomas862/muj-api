@@ -20,7 +20,6 @@ type RowData interface{}
 
 // Parser interface that all parsers must implement
 type Parser interface {
-    Initialize() error
     ReadRows(config ParserConfig) (<-chan RowData, error)  // Returns a channel of rows from the data source
     MapRow(RowData) (interface{}, error)  // Maps row data to a specific entry type
     ProcessEntry(interface{}) error        // Performs any processing on an entry before it's added to the batch
@@ -54,11 +53,6 @@ func main() {
         log.Fatal(err)
     }
 
-    // Initialize the parser
-    if err := parser.Initialize(); err != nil {
-        log.Fatal(err)
-    }
-
     // Common file reading and chunking logic
     totalProcessed, totalInserted, totalErrors := readAndProcessFile(db, parser, config)
 
@@ -77,7 +71,8 @@ func createParser(parserType string) (Parser, error) {
     switch parserType {
     case "nomenclature":
         return &NomenclatureParser{}, nil
-    // Add more parser types here
+    case "declarable_codes":
+		return &DeclarableCodesParser{}, nil
     default:
         return nil, fmt.Errorf("unknown parser type: %s", parserType)
     }

@@ -75,12 +75,6 @@ type NomenclatureParser struct {
     BaseExcelParser // Embed the BaseExcelParser to inherit ReadRows
 }
 
-// Initialize prepares the parser for processing
-func (p *NomenclatureParser) Initialize() error {
-    // Any nomenclature specific initialization
-    return nil
-}
-
 // MapRow now expects an ExcelRow and converts it to a NomenclatureEntry
 func (p *NomenclatureParser) MapRow(rowData RowData) (interface{}, error) {
     row, ok := rowData.(ExcelRow)
