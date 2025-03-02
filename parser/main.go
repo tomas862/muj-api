@@ -10,9 +10,9 @@ import (
 
 // ParserConfig holds configuration for the parser
 type ParserConfig struct {
-    ParserType string
-    FilePath   string
-    ChunkSize  int
+	ParserType string // Type of parser to use
+	FilePath   string // Optional path to the file to parse (can be empty if parser uses other data sources)
+	ChunkSize  int    // Size of chunks to process
 }
 
 // RowData represents a single row of data from any source
@@ -65,7 +65,7 @@ func main() {
     // Print summary statistics
     fmt.Println("\n*** Import Summary ***")
     fmt.Printf("Parser type: %s\n", config.ParserType)
-    fmt.Printf("File: %s\n", config.FilePath)
+    fmt.Printf("Path: %s\n", config.FilePath)
     fmt.Printf("Total rows processed: %d\n", totalProcessed)
     fmt.Printf("Total entries inserted/updated: %d\n", totalInserted)
     fmt.Printf("Total errors: %d\n", totalErrors)
