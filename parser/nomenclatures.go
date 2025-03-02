@@ -1,11 +1,11 @@
 package main
 
 import (
-    "database/sql"
-    "fmt"
-    "strconv"
-    "strings"
-    "time"
+	"database/sql"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // NomenclatureEntry represents a single row from the nomenclature Excel file
@@ -140,19 +140,35 @@ func (p *NomenclatureParser) MapRow(rowData RowData) (interface{}, error) {
 }
 
 // ProcessEntry calculates additional fields for a nomenclature entry
-func (p *NomenclatureParser) ProcessEntry(entryInterface interface{}) error {
-    entry, ok := entryInterface.(*NomenclatureEntry)
-    if !ok {
-        entryValue := entryInterface.(NomenclatureEntry)
-        entry = &entryValue
-    }
+func (p *NomenclatureParser) ProcessEntry(entryInterface *interface{}) error {
+    // First, dereference the pointer to get the actual interface{} value
+    entryValue := *entryInterface
     
-    // Calculate hierarchy path
-    hierPath, err := getHierarchyPath(entry.GoodsCode, entry.HierPos)
-    if err != nil {
-        return fmt.Errorf("error getting hierarchy path: %v", err)
+    // Now we can perform type assertions on the actual interface value
+    switch entry := entryValue.(type) {
+    case *NomenclatureEntry:
+        // It's already a pointer to NomenclatureEntry
+        hierPath, err := getHierarchyPath(entry.GoodsCode, entry.HierPos)
+        if err != nil {
+            return fmt.Errorf("error getting hierarchy path: %v", err)
+        }
+        entry.HierarchyPath = hierPath
+        
+    case NomenclatureEntry:
+        // It's a value type, need to create a pointer and update the interface
+        newEntry := entry // Create a copy
+        hierPath, err := getHierarchyPath(newEntry.GoodsCode, newEntry.HierPos)
+        if err != nil {
+            return fmt.Errorf("error getting hierarchy path: %v", err)
+        }
+        newEntry.HierarchyPath = hierPath
+        
+        // Update the original interface pointer to point to our new entry
+        *entryInterface = newEntry
+        
+    default:
+        return fmt.Errorf("unexpected entry type: %T", entryValue)
     }
-    entry.HierarchyPath = hierPath
     
     return nil
 }

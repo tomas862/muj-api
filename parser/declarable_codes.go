@@ -62,7 +62,7 @@ func (p *DeclarableCodesParser) MapRow(rowData RowData) (interface{}, error) {
 	return entry, nil
 }
 
-func (p *DeclarableCodesParser) ProcessEntry(entry interface{}) error {
+func (p *DeclarableCodesParser) ProcessEntry(entry *interface{}) error {
 	// No processing needed for Declarable codes parser
 	return nil
 }

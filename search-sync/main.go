@@ -22,14 +22,17 @@ type NomenclatureData struct {
     Language        string
     DescrStartDate  string
     SectionName     string
+	IsLeaf		 	bool
 }
 
 // NomenclatureResult represents the structured result for a goods code with multi-language support
 type NomenclatureResult struct {
     GoodsCode      string              `json:"goods_code"`
     Description    map[string]string   `json:"description"`
+	CategoryCodes  []string `json:"category_codes"`
     Categories     map[string][]string `json:"categories"`
     CategoriesPath map[string]string   `json:"categories_path"`
+	CategoryCodesPath string `json:"category_codes_path"`
 }
 
 func main () {
@@ -50,9 +53,11 @@ func main () {
 	for {	
         rows, err := db.Query(`
             SELECT ni.id, ni.goods_code, ni.start_date, ni.end_date, ni.hierarchy_path, ni.indent, 
-                   nd.description, nd.language, nd.descr_start_date, sd.name as section_name
+                   nd.description, nd.language, nd.descr_start_date, sd.name as section_name,
+				   dc.is_leaf
             FROM nomenclatures ni
             JOIN nomenclature_descriptions nd ON ni.id = nd.nomenclature_id
+			LEFT JOIN nomenclature_declarable_codes dc ON ni.id = dc.nomenclature_id
             JOIN section_chapter_mapping scm ON 
                 CAST(SUBSTRING(ni.goods_code, 1, 2) AS INTEGER) = scm.chapter_id
             JOIN section_descriptions sd ON 
@@ -78,7 +83,19 @@ func main () {
 				var data NomenclatureData
 				var endDate sql.NullString
 
-				err := rows.Scan(&data.ID, &data.GoodsCode, &data.StartDate, &endDate, &data.HierarchyPath, &data.Indent, &data.Description, &data.Language, &data.DescrStartDate, &data.SectionName)
+				err := rows.Scan(
+					&data.ID,
+					&data.GoodsCode,
+					&data.StartDate,
+					&endDate,
+					&data.HierarchyPath,
+					&data.Indent,
+					&data.Description,
+					&data.Language,
+					&data.DescrStartDate,
+					&data.SectionName,
+					&data.IsLeaf,
+				)
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -127,8 +144,10 @@ func main () {
 					result = NomenclatureResult{
 						GoodsCode:      entry.GoodsCode,
 						Description:    make(map[string]string),
+						CategoryCodes: 	[]string{},
 						Categories:     make(map[string][]string),
 						CategoriesPath: make(map[string]string),
+						CategoryCodesPath: "",
 					}
 				}
 
@@ -137,6 +156,7 @@ func main () {
 				
 				// Process categories for this language
 				categories := []string{entry.SectionName}
+				categoryCodes := []string{}
 				
 				segmentToCheck := ""
 				pathSegments := strings.Split(entry.HierarchyPath, ".")
@@ -145,6 +165,9 @@ func main () {
 					if i == len(pathSegments)-1 {
 						break
 					}
+
+					categoryCodes = append(categoryCodes, segment)
+					
 					segmentToCheck += segment
 					if _, exists := hierarchyData[segmentToCheck]; exists {
 						if langData, ok := hierarchyData[segmentToCheck][language]; ok {
@@ -163,6 +186,8 @@ func main () {
 				// Store categories and path for this language
 				result.Categories[language] = categories
 				result.CategoriesPath[language] = strings.Join(categories, " > ")
+				result.CategoryCodes = categoryCodes
+				result.CategoryCodesPath = strings.Join(categoryCodes, " > ")
 				
 				// Update the map
 				resultMap[entry.GoodsCode] = result

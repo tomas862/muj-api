@@ -22,7 +22,7 @@ type RowData interface{}
 type Parser interface {
     ReadRows(config ParserConfig) (<-chan RowData, error)  // Returns a channel of rows from the data source
     MapRow(RowData) (interface{}, error)  // Maps row data to a specific entry type
-    ProcessEntry(interface{}) error        // Performs any processing on an entry before it's added to the batch
+    ProcessEntry(*interface{}) error        // Performs any processing on an entry before it's added to the batch
     SaveEntries(db *sql.DB, entries []interface{}) (int, error)  // Saves a batch of entries to the database
 }
 
@@ -107,7 +107,7 @@ func readAndProcessFile(db *sql.DB, parser Parser, config ParserConfig) (int, in
         }
 
         // Process the entry (e.g., calculate derived fields)
-        if err := parser.ProcessEntry(entry); err != nil {
+        if err := parser.ProcessEntry(&entry); err != nil {
             log.Printf("Error processing row %d: %v", rowNumber, err)
             totalErrors++
             continue
