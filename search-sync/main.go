@@ -1,13 +1,23 @@
 package main
 
 import (
+	"context"
 	"database/sql"
-	"encoding/json"
-	"fmt"
 	"log"
 	"muj/database"
+	"muj/utils"
+	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
+
+	"github.com/joho/godotenv"
+	"github.com/typesense/typesense-go/v3/typesense"
+	"github.com/typesense/typesense-go/v3/typesense/api"
+	"github.com/typesense/typesense-go/v3/typesense/api/pointer"
+	"golang.org/x/text/unicode/norm"
 )
 
 // NomenclatureData represents the combined data from both tables
@@ -27,15 +37,42 @@ type NomenclatureData struct {
 
 // NomenclatureResult represents the structured result for a goods code with multi-language support
 type NomenclatureResult struct {
+	Id 		   	   string                `json:"id"`
     GoodsCode      string              `json:"goods_code"`
-    Description    map[string]string   `json:"description"`
+    DescriptionEn    string   `json:"description_en"`
+    DescriptionLt    string   `json:"description_lt"`
+    DescriptionLtNormalized string `json:"description_lt_normalized"`
 	CategoryCodes  []string `json:"category_codes"`
-    Categories     map[string][]string `json:"categories"`
-    CategoriesPath map[string]string   `json:"categories_path"`
-	CategoryCodesPath string `json:"category_codes_path"`
+    CategoriesEn     []string `json:"categories_en"`
+    CategoriesLt     []string `json:"categories_lt"`
+    CategoriesLtNormalized []string `json:"categories_lt_normalized"`
+    // CategoriesPath map[string]string   `json:"categories_path"`
+	// CategoryCodesPath string `json:"category_codes_path"`
+}
+
+// removeDiacritics removes diacritical marks from a string
+func removeDiacritics(input string) string {
+	// Normalize to decomposed form (NFD), so accents become separate characters
+	t := norm.NFD.String(input)
+	
+	// Filter out non-spacing marks (accents, diacritics)
+	var b strings.Builder
+	for _, r := range t {
+		if unicode.IsMark(r) {
+			continue // Skip diacritics
+		}
+		b.WriteRune(r)
+	}
+
+	return b.String()
 }
 
 func main () {
+	// Load environment variables from the same directory as this file
+	if err := godotenv.Load(filepath.Join(utils.GetAbsolutePath(".env"))); err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	
 	// Connect to database using the database package
 	db, err := database.Connect()
 	if (err != nil) {
@@ -44,7 +81,7 @@ func main () {
 	defer db.Close()
 
 	// Define the chunk size
-    chunkSize := 9
+    chunkSize := 1000
     offset := 0
 
 	// Create a map to store data indexed by hierarchy path
@@ -72,55 +109,53 @@ func main () {
         }
 
         // Check if there are no more rows to process
-        if offset > 9 {
+        if !rows.Next() {
             break
         }
 
-		// fake data limitation
-        if offset <= 9 {
-			// Iterate over the rows and process the data
-			for rows.Next() {
-				var data NomenclatureData
-				var endDate sql.NullString
-				var isLeaf sql.NullBool
+		// Iterate over the rows and process the data
+		for rows.Next() {
+			var data NomenclatureData
+			var endDate sql.NullString
+			var isLeaf sql.NullBool
 
-				err := rows.Scan(
-					&data.ID,
-					&data.GoodsCode,
-					&data.StartDate,
-					&endDate,
-					&data.HierarchyPath,
-					&data.Indent,
-					&data.Description,
-					&data.Language,
-					&data.DescrStartDate,
-					&data.SectionName,
-					&isLeaf,
-				)
-				if err != nil {
-					log.Fatal(err)
-				}
+			err := rows.Scan(
+				&data.ID,
+				&data.GoodsCode,
+				&data.StartDate,
+				&endDate,
+				&data.HierarchyPath,
+				&data.Indent,
+				&data.Description,
+				&data.Language,
+				&data.DescrStartDate,
+				&data.SectionName,
+				&isLeaf,
+			)
 
-				if endDate.Valid {
-					data.EndDate = &endDate.String
-				} else {
-					data.EndDate = nil
-				}
-
-				if isLeaf.Valid {
-					data.IsLeaf = &isLeaf.Bool
-				} else {
-					data.IsLeaf = nil
-				}
-
-				// Initialize the inner map if it doesn't exist
-				if _, exists := hierarchyData[data.HierarchyPath]; !exists {
-					hierarchyData[data.HierarchyPath] = make(map[string][]NomenclatureData)
-				}
-
-				// Add the data to the map, using HierarchyPath as the key
-                hierarchyData[data.HierarchyPath][data.Language] = append(hierarchyData[data.HierarchyPath][data.Language], data)
+			if err != nil {
+				log.Fatal(err)
 			}
+
+			if endDate.Valid {
+				data.EndDate = &endDate.String
+			} else {
+				data.EndDate = nil
+			}
+
+			if isLeaf.Valid {
+				data.IsLeaf = &isLeaf.Bool
+			} else {
+				data.IsLeaf = nil
+			}
+
+			// Initialize the inner map if it doesn't exist
+			if _, exists := hierarchyData[data.HierarchyPath]; !exists {
+				hierarchyData[data.HierarchyPath] = make(map[string][]NomenclatureData)
+			}
+
+			// Add the data to the map, using HierarchyPath as the key
+			hierarchyData[data.HierarchyPath][data.Language] = append(hierarchyData[data.HierarchyPath][data.Language], data)
 		}
 
 		// Close the rows
@@ -128,9 +163,6 @@ func main () {
         // Increment the offset for the next chunk
         offset += chunkSize
 	}
-
-	// Print the number of unique hierarchy paths found
-    fmt.Printf("Found %d unique hierarchy paths\n", len(hierarchyData))
     
 	// Create a map to store results by goodsCode
 	resultMap := make(map[string]NomenclatureResult)
@@ -149,17 +181,27 @@ func main () {
 				if !exists {
 					// Initialize a new result structure
 					result = NomenclatureResult{
+						Id:			 strconv.Itoa(entry.ID),
 						GoodsCode:      entry.GoodsCode,
-						Description:    make(map[string]string),
+						DescriptionEn:   "",
+						DescriptionLt:   "",
+                        DescriptionLtNormalized: "",
 						CategoryCodes: 	[]string{},
-						Categories:     make(map[string][]string),
-						CategoriesPath: make(map[string]string),
-						CategoryCodesPath: "",
+						CategoriesEn:     []string{},
+						CategoriesLt:     []string{},
+                        CategoriesLtNormalized: []string{},
+						// CategoriesPath: make(map[string]string),
+						// CategoryCodesPath: "",
 					}
 				}
 
 				// Add this language's description
-				result.Description[language] = entry.Description
+				if language == "EN" {
+					result.DescriptionEn = entry.Description
+				} else if language == "LT" {
+					result.DescriptionLt = entry.Description
+                    result.DescriptionLtNormalized = removeDiacritics(entry.Description)
+				}
 				
 				// Process categories for this language
 				categories := []string{entry.SectionName}
@@ -191,10 +233,18 @@ func main () {
 				}
 
 				// Store categories and path for this language
-				result.Categories[language] = categories
-				result.CategoriesPath[language] = strings.Join(categories, " > ")
+				if language == "EN" {
+					result.CategoriesEn = categories
+				} else if language == "LT" {
+					result.CategoriesLt = categories
+                    result.CategoriesLtNormalized = make([]string, len(categories))
+                    for i, category := range categories {
+                        result.CategoriesLtNormalized[i] = removeDiacritics(category)
+                    }
+				}
+				// result.CategoriesPath[language] = strings.Join(categories, " > ")
 				result.CategoryCodes = categoryCodes
-				result.CategoryCodesPath = strings.Join(categoryCodes, " > ")
+				// result.CategoryCodesPath = strings.Join(categoryCodes, " > ")
 				
 				// Update the map
 				resultMap[entry.GoodsCode] = result
@@ -209,12 +259,116 @@ func main () {
 		results = append(results, result)
 	}
 
-	// Output the results
-	for _, result := range results {
-		jsonResult, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Printf("Result: %s\n\n", jsonResult)
+	client := typesense.NewClient(
+	    typesense.WithServer(os.Getenv("TYPESENSE_HOST")),
+	    typesense.WithAPIKey(os.Getenv("TYPESENSE_API_KEY")),)
+	
+	client.Collection("nomenclatures").Delete(context.Background())
+
+	schema := &api.CollectionSchema{
+		Name: "nomenclatures",
+		Fields: []api.Field{
+			{
+				Name: "goods_code",
+				Type: "string",
+			},
+			{
+				Name: "description_en",
+				Type: "string",
+				Locale: pointer.String("en"),
+			},
+			{
+				Name: "description_lt",
+				Type: "string",
+				Locale: pointer.String("lt"),
+			},
+            {
+                Name: "description_lt_normalized",
+                Type: "string",
+                Locale: pointer.String("lt"),
+            },
+			{
+				Name: "category_codes",
+				Type: "string[]",
+				Facet: pointer.True(),
+			},
+			{
+				Name: "categories_en",
+				Type: "string[]",
+				Facet: pointer.True(),
+				Locale: pointer.String("en"),
+			},
+			{
+				Name: "categories_lt",
+				Type: "string[]",
+				Facet: pointer.True(),
+				Locale: pointer.String("lt"),
+			},
+            {
+                Name: "categories_lt_normalized",
+				Type: "string[]",
+				Facet: pointer.True(),
+				Locale: pointer.String("lt"),
+            },
+		},
 	}
+
+	_, err = client.Collections().Create(context.Background(), schema)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	chunkSize = 1000
+    rowCount := 0
+    totalRecords := len(results)
+    log.Printf("Starting import of %d records to Typesense", totalRecords)
+    
+    for i := 0; i < len(results); i++ {
+        rowCount++
+        if (rowCount >= chunkSize || i == len(results)-1) {
+            start := i - rowCount + 1
+            end := i + 1  // exclusive end
+            
+            log.Printf("Importing batch %d-%d of %d records (%d%%)", 
+                start+1, end, totalRecords, end*100/totalRecords)
+            
+            action := api.Create
+            params := &api.ImportDocumentsParams{
+                Action:    &action,  // Create a pointer to the constant
+                BatchSize: pointer.Int(rowCount),
+            }
+
+            // Convert the slice to []interface{}
+            documents := make([]interface{}, rowCount)
+            for j := 0; j < rowCount; j++ {
+                documents[j] = results[start+j]
+            }
+
+            importResult, err := client.Collection("nomenclatures").Documents().Import(context.Background(), documents, params)
+            
+            if err != nil {
+                log.Fatal(err)
+            }
+            
+            // Log success/failure counts
+            successCount := 0
+            for _, doc := range importResult {
+                if doc.Success {
+                    successCount++
+                } else {
+                    log.Printf("Error importing document: %s", doc.Error)
+                }
+            }
+            
+            log.Printf("Batch import completed: %d successful, %d failed", 
+                successCount, rowCount-successCount)
+
+            rowCount = 0
+        }
+    }
+
+    // No need for a separate final batch handling as it's now included in the main loop
+    
+    log.Printf("Import process completed: %d total records processed", totalRecords)
 }
