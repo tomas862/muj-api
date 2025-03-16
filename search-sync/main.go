@@ -46,6 +46,7 @@ type NomenclatureResult struct {
     CategoriesEn     []string `json:"categories_en"`
     CategoriesLt     []string `json:"categories_lt"`
     CategoriesLtNormalized []string `json:"categories_lt_normalized"`
+    RankBoost      int       `json:"rank_boost"`
     // CategoriesPath map[string]string   `json:"categories_path"`
 	// CategoryCodesPath string `json:"category_codes_path"`
 }
@@ -190,6 +191,7 @@ func main () {
 						CategoriesEn:     []string{},
 						CategoriesLt:     []string{},
                         CategoriesLtNormalized: []string{},
+						RankBoost:      0, // Default boost value
 						// CategoriesPath: make(map[string]string),
 						// CategoryCodesPath: "",
 					}
@@ -201,6 +203,11 @@ func main () {
 				} else if language == "LT" {
 					result.DescriptionLt = entry.Description
                     result.DescriptionLtNormalized = removeDiacritics(entry.Description)
+				}
+				
+				// Set rank boost based on isLeaf value
+				if entry.IsLeaf != nil && *entry.IsLeaf {
+					result.RankBoost = 10 // Higher value for leaf nodes
 				}
 				
 				// Process categories for this language
@@ -310,6 +317,10 @@ func main () {
 				Facet: pointer.True(),
 				Locale: pointer.String("lt"),
             },
+			{
+				Name: "rank_boost",
+				Type: "int32",
+			},
 		},
 	}
 
