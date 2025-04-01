@@ -71,14 +71,6 @@ func removeDiacritics(input string) string {
 	return b.String()
 }
 
-// Helper function for min
-func min(a, b int) int {
-    if a < b {
-        return a
-    }
-    return b
-}
-
 func main () {
 	// Load environment variables from the same directory as this file
 	if err := godotenv.Load(filepath.Join(utils.GetAbsolutePath(".env"))); err != nil {
