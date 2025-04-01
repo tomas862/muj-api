@@ -32,6 +32,7 @@ type NomenclatureData struct {
     Language        string
     DescrStartDate  string
     SectionName     string
+    SectionNumber   string
 	IsLeaf		 	*bool
 }
 
@@ -39,6 +40,7 @@ type NomenclatureData struct {
 type NomenclatureResult struct {
 	Id 		   	   string                `json:"id"`
     GoodsCode      string              `json:"goods_code"`
+    GoodsCodeNumeric int64             `json:"goods_code_numeric"`
     DescriptionEn    string   `json:"description_en"`
     DescriptionLt    string   `json:"description_lt"`
     DescriptionLtNormalized string `json:"description_lt_normalized"`
@@ -47,6 +49,7 @@ type NomenclatureResult struct {
     CategoriesLt     []string `json:"categories_lt"`
     CategoriesLtNormalized []string `json:"categories_lt_normalized"`
     RankBoost      int       `json:"rank_boost"`
+    Root           bool      `json:"root"`
     // CategoriesPath map[string]string   `json:"categories_path"`
 	// CategoryCodesPath string `json:"category_codes_path"`
 }
@@ -66,6 +69,14 @@ func removeDiacritics(input string) string {
 	}
 
 	return b.String()
+}
+
+// Helper function for min
+func min(a, b int) int {
+    if a < b {
+        return a
+    }
+    return b
 }
 
 func main () {
@@ -92,7 +103,7 @@ func main () {
         rows, err := db.Query(`
             SELECT ni.id, ni.goods_code, ni.start_date, ni.end_date, ni.hierarchy_path, ni.indent, 
                    nd.description, nd.language, nd.descr_start_date, sd.name as section_name,
-				   dc.is_leaf
+                   sd.section_number, dc.is_leaf
             FROM nomenclatures ni
             JOIN nomenclature_descriptions nd ON ni.id = nd.nomenclature_id
 			LEFT JOIN nomenclature_declarable_codes dc ON ni.id = dc.nomenclature_id
@@ -131,6 +142,7 @@ func main () {
 				&data.Language,
 				&data.DescrStartDate,
 				&data.SectionName,
+				&data.SectionNumber,
 				&isLeaf,
 			)
 
@@ -181,19 +193,21 @@ func main () {
 				result, exists := resultMap[entry.GoodsCode]
 				if !exists {
 					// Initialize a new result structure
+					numericPart := ExtractNumericPart(entry.GoodsCode)
+					
 					result = NomenclatureResult{
 						Id:			 strconv.Itoa(entry.ID),
 						GoodsCode:      entry.GoodsCode,
+						GoodsCodeNumeric: numericPart,
 						DescriptionEn:   "",
 						DescriptionLt:   "",
-                        DescriptionLtNormalized: "",
+						DescriptionLtNormalized: "",
 						CategoryCodes: 	[]string{},
 						CategoriesEn:     []string{},
 						CategoriesLt:     []string{},
-                        CategoriesLtNormalized: []string{},
-						RankBoost:      0, // Default boost value
-						// CategoriesPath: make(map[string]string),
-						// CategoryCodesPath: "",
+						CategoriesLtNormalized: []string{},
+						RankBoost:      0,
+						Root:           false,
 					}
 				}
 
@@ -212,7 +226,7 @@ func main () {
 				
 				// Process categories for this language
 				categories := []string{entry.SectionName}
-				categoryCodes := []string{}
+				categoryCodes := []string{entry.SectionNumber}  // Add section number as first category code
 				
 				segmentToCheck := ""
 				pathSegments := strings.Split(entry.HierarchyPath, ".")
@@ -266,6 +280,62 @@ func main () {
 		results = append(results, result)
 	}
 
+	// First import section descriptions
+	sectionRows, err := db.Query(`
+		SELECT section_number, language, name 
+		FROM section_descriptions 
+		ORDER BY section_number, language
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	sectionMap := make(map[string]NomenclatureResult)
+	for sectionRows.Next() {
+		var sectionNumber string
+		var language string
+		var name string
+		
+		err := sectionRows.Scan(&sectionNumber, &language, &name)
+		if err != nil {
+			log.Fatal(err)
+		}
+		
+		result, exists := sectionMap[sectionNumber]
+		if !exists {
+			result = NomenclatureResult{
+				Id:           "s" + sectionNumber,
+				GoodsCode:    sectionNumber,
+				GoodsCodeNumeric: ExtractNumericPart(sectionNumber),
+				RankBoost:    0,
+				CategoryCodes: []string{sectionNumber},
+				CategoriesEn: []string{},
+				CategoriesLt: []string{},
+				CategoriesLtNormalized: []string{},
+				Root:         true,
+			}
+		}
+		
+		if language == "EN" {
+			result.DescriptionEn = name
+			result.CategoriesEn = []string{name}
+		} else if language == "LT" {
+			result.DescriptionLt = name
+			result.DescriptionLtNormalized = removeDiacritics(name)
+			result.CategoriesLt = []string{name}
+			result.CategoriesLtNormalized = []string{removeDiacritics(name)}
+		}
+		
+		sectionMap[sectionNumber] = result
+	}
+	sectionRows.Close()
+
+	// Convert section map to slice
+	sectionResults := make([]interface{}, 0, len(sectionMap))
+	for _, section := range sectionMap {
+		sectionResults = append(sectionResults, section)
+	}
+
 	client := typesense.NewClient(
 	    typesense.WithServer(os.Getenv("TYPESENSE_HOST")),
 	    typesense.WithAPIKey(os.Getenv("TYPESENSE_API_KEY")),)
@@ -278,6 +348,12 @@ func main () {
 			{
 				Name: "goods_code",
 				Type: "string",
+				Sort: pointer.True(),
+			},
+			{
+				Name: "goods_code_numeric",
+				Type: "int64",
+				Sort: pointer.True(),
 			},
 			{
 				Name: "description_en",
@@ -321,6 +397,10 @@ func main () {
 				Name: "rank_boost",
 				Type: "int32",
 			},
+            {
+                Name: "root",
+                Type: "bool",
+            },
 		},
 	}
 
@@ -328,6 +408,34 @@ func main () {
 
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	// Import section descriptions first
+	if len(sectionResults) > 0 {
+		log.Printf("Importing %d section descriptions to Typesense", len(sectionResults))
+		
+		action := api.Create
+		params := &api.ImportDocumentsParams{
+			Action:    &action,
+			BatchSize: pointer.Int(len(sectionResults)),
+		}
+		
+		importResult, err := client.Collection("nomenclatures").Documents().Import(context.Background(), sectionResults, params)
+		if err != nil {
+			log.Fatal(err)
+		}
+		
+		successCount := 0
+		for _, doc := range importResult {
+			if doc.Success {
+				successCount++
+			} else {
+				log.Printf("Error importing section: %s", doc.Error)
+			}
+		}
+		
+		log.Printf("Section import completed: %d successful, %d failed",
+			successCount, len(sectionResults)-successCount)
 	}
 
 	chunkSize = 1000
