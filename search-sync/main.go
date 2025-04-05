@@ -50,6 +50,7 @@ type NomenclatureResult struct {
     CategoriesLtNormalized []string `json:"categories_lt_normalized"`
     RankBoost      int       `json:"rank_boost"`
     Root           bool      `json:"root"`
+    IsLeaf         *bool     `json:"is_leaf"`
     // CategoriesPath map[string]string   `json:"categories_path"`
 	// CategoryCodesPath string `json:"category_codes_path"`
 }
@@ -200,6 +201,7 @@ func main () {
 						CategoriesLtNormalized: []string{},
 						RankBoost:      0,
 						Root:           false,
+						IsLeaf:         entry.IsLeaf,
 					}
 				}
 
@@ -295,6 +297,7 @@ func main () {
 		
 		result, exists := sectionMap[sectionNumber]
 		if !exists {
+			isLeaf := false
 			result = NomenclatureResult{
 				Id:           "s" + sectionNumber,
 				GoodsCode:    sectionNumber,
@@ -305,6 +308,7 @@ func main () {
 				CategoriesLt: []string{},
 				CategoriesLtNormalized: []string{},
 				Root:         true,
+				IsLeaf:       &isLeaf, // Sections are not leaf nodes
 			}
 		}
 		
@@ -391,6 +395,10 @@ func main () {
 			},
             {
                 Name: "root",
+                Type: "bool",
+            },
+            {
+                Name: "is_leaf",
                 Type: "bool",
             },
 		},
