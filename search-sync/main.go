@@ -51,8 +51,7 @@ type NomenclatureResult struct {
     RankBoost      int       `json:"rank_boost"`
     Root           bool      `json:"root"`
     IsLeaf         *bool     `json:"is_leaf"`
-    // CategoriesPath map[string]string   `json:"categories_path"`
-	// CategoryCodesPath string `json:"category_codes_path"`
+	CategoryCodesPath string `json:"category_codes_path"`
 }
 
 // removeDiacritics removes diacritical marks from a string
@@ -257,9 +256,9 @@ func main () {
                         result.CategoriesLtNormalized[i] = removeDiacritics(category)
                     }
 				}
-				// result.CategoriesPath[language] = strings.Join(categories, " > ")
+
 				result.CategoryCodes = categoryCodes
-				// result.CategoryCodesPath = strings.Join(categoryCodes, " > ")
+				result.CategoryCodesPath = BuildTaricPath(categoryCodes, entry.GoodsCode)
 				
 				// Update the map
 				resultMap[entry.GoodsCode] = result
@@ -309,6 +308,7 @@ func main () {
 				CategoriesLtNormalized: []string{},
 				Root:         true,
 				IsLeaf:       &isLeaf, // Sections are not leaf nodes
+				CategoryCodesPath: sectionNumber,
 			}
 		}
 		
@@ -400,6 +400,10 @@ func main () {
             {
                 Name: "is_leaf",
                 Type: "bool",
+            },
+            {
+                Name: "category_codes_path",
+                Type: "string",
             },
 		},
 	}
